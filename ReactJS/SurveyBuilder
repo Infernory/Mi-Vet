@@ -1,0 +1,690 @@
+import React, { useState, useEffect, Fragment } from "react";
+import { Card, Container, Row, Col, Button, Accordion } from "react-bootstrap";
+import { Link } from "react-router-dom";
+import SurveysGradientHeader from "./BuilderHeader";
+import { Formik, Form, Field, FieldArray, ErrorMessage } from "formik";
+import FloatingLabel from "react-bootstrap/FloatingLabel";
+import {
+  CheckCircleFill,
+  ExclamationTriangleFill,
+  Bicycle,
+  Box2HeartFill,
+  QuestionCircleFill,
+} from "react-bootstrap-icons";
+import toastr from "toastr";
+import lookUpService from "services/lookUpService";
+import Select from "react-select";
+import { FiUpload, FiTrash2 } from "react-icons/fi";
+import surveyQuestionsSchema from "schemas/surveyQuestionsSchema";
+import "./surveybuilder.css";
+import { useLocation } from "react-router-dom";
+import surveyQuestionsService from "services/surveyQuestionsService";
+import debug from "sabio-debug";
+
+const _logger = debug.extend("SurveyAddEditForm");
+
+const AddSurvey = () => {
+  const [questionTypes, setQuestionTypes] = useState([{ name: "", id: "" }]);
+
+  let { state } = useLocation();
+  const [surveyData, setSurveyData] = useState({
+    name: "",
+    description: "",
+    statusId: 0,
+    surveyTypeId: 0,
+    surveyQuestions: [
+      {
+        question: "",
+        helpText: "",
+        isRequired: false,
+        isMultipleAllowed: false,
+        questionTypeId: 0,
+        surveyId: 0,
+        statusId: 0,
+        sortOrder: 0,
+        questionAnswerOptions: [
+          {
+            questionId: 0,
+            text: "",
+            value: "",
+            additionalInfo: "",
+          },
+        ],
+      },
+    ],
+  });
+
+  useEffect(() => {
+    if (state && state?.type === "SurveyBuilder_edit") {
+      _logger("PAYLOAD", state.payload);
+      setSurveyData((prevState) => {
+        let localState = state.payload;
+        let fd = { ...prevState };
+        fd.id = localState.id;
+        fd.name = localState.name;
+        fd.description = localState.description;
+        fd.statusId = localState.statusId;
+        fd.surveyTypeId = localState.surveyTypeId;
+        fd.surveyQuestions = localState.surveyQuestions;
+        return fd;
+      });
+    }
+  }, []);
+
+  //SurveyQuestion UseLocation & Formik Push
+  const newQuestion = {
+    question: "",
+    helpText: "",
+    isRequired: false,
+    isMultipleAllowed: false,
+    questionTypeId: "",
+    surveyId: surveyData.id,
+    statusId: surveyData.statusId,
+    sortOrder: 0,
+    questionAnswerOptions: [],
+  };
+
+  useEffect(() => {
+    lookUpService
+      .LookUp(["QuestionTypes"])
+      .then(onGetQTypesSuccess)
+      .catch(onGetLookupError);
+  }, []);
+
+  const onGetQTypesSuccess = (response) => {
+    let newData = response.item.questionTypes;
+    setQuestionTypes(newData);
+  };
+  const onGetLookupError = () => {
+    toastr["error"]("Get look up failed.", "Error");
+  };
+
+  const onSave = (values) => {
+    _logger("Save Values", values);
+    surveyQuestionsService
+      .addUpdateBatchQuestions(values)
+      .then(onAddUpdateQuestions)
+      .catch(onAddUpdateError);
+  };
+  const onAddUpdateQuestions = () => {
+    toastr["success"]("Survey Questions Saved.", "Yay!");
+  };
+  const onAddUpdateError = () => {
+    toastr["error"]("Nothing was saved.", "Error");
+  };
+
+  const deleteHandler = (id) => {
+    surveyQuestionsService
+      .deleteQuestionOnly(id)
+      .then(onRemoveQuestions)
+      .catch(onRemoveError);
+  };
+  const onRemoveQuestions = () => {
+    toastr["success"]("Survey question removed!", "Removed!");
+  };
+  const onRemoveError = () => {
+    toastr["error"]("Nothing was removed.", "Failed");
+  };
+
+  const mapQuestionTypes = questionTypes.map((questionType) => (
+    <option value={questionType.id} key={questionType.id}>
+      {questionType.name}
+    </option>
+  ));
+
+  const openFiles = (event) => {
+    event.preventDefault();
+    window.open(`${window.location.protocol}/dashboard/files`);
+  };
+
+  function answerOptionsSwitch(values, questionIndex) {
+    const questionTypeId = parseInt(
+      values.surveyQuestions[questionIndex].questionTypeId
+    );
+    switch (questionTypeId) {
+      case 1:
+        return (
+          <React.Fragment>
+            <div className="form-check">
+              <input
+                type="radio"
+                className="form-check-input"
+                disabled
+                readOnly
+              />
+              <label className="form-check-label">Yes</label>
+            </div>
+            <div className="form-check">
+              <input
+                type="radio"
+                className="form-check-input"
+                disabled
+                readOnly
+              />
+              <label className="form-check-label">No</label>
+            </div>
+            <div className="form-check">
+              <input
+                type="radio"
+                className="form-check-input"
+                disabled
+                readOnly
+              />
+              <label className="form-check-label">I don&apos;t know.</label>
+            </div>
+          </React.Fragment>
+        );
+      case 2:
+        return (
+          <div className="row">
+            <input
+              placeholder="Short text"
+              type="text"
+              className="form-control"
+              disabled
+              readOnly
+            />
+          </div>
+        );
+      case 3:
+        return (
+          <div className="row">
+            <input
+              placeholder="Long text"
+              type="textarea"
+              rows="4"
+              className="form-control"
+              disabled
+            />
+          </div>
+        );
+      case 4:
+        return (
+          <Row>
+            <Col md={{ span: 4, offset: 4 }}>
+              All uploads will be sent here...{" "}
+              <Link onClick={openFiles} className="btn btn-primary">
+                <FiUpload color="white" size={"50px"} />
+                File Manager Dashboard
+              </Link>
+            </Col>
+          </Row>
+        );
+      case 5:
+        return (
+          <FieldArray
+            name={`surveyQuestions.${questionIndex}.questionAnswerOptions`}
+            render={(arrayHelpers) => (
+              <div>
+                {values.surveyQuestions[questionIndex].questionAnswerOptions
+                  .length > 0 ? (
+                  values.surveyQuestions[
+                    questionIndex
+                  ].questionAnswerOptions.map(
+                    (questionAnswerOptions, answerOptionIndex) => (
+                      <div key={answerOptionIndex}>
+                        <Row className="mb-1">
+                          <Col xs={10}>
+                            <FloatingLabel
+                              controlId="floatingInput"
+                              label="Answer Option"
+                            >
+                              <Field
+                                name={`surveyQuestions.${questionIndex}.questionAnswerOptions.${answerOptionIndex}.text`}
+                                placeholder="Answer Option"
+                                type="text"
+                                className="form-control"
+                                required
+                              />
+                              <ErrorMessage
+                                name={`surveyQuestions.${questionIndex}.questionAnswerOptions.${answerOptionIndex}.text`}
+                                component="div"
+                                className="surveybuilder-validation-error-message"
+                              />
+                            </FloatingLabel>
+                          </Col>
+                          <Col xs={2}>
+                            <Button
+                              type="button"
+                              className="secondary me-2"
+                              onClick={() => arrayHelpers.push("")}
+                            >
+                              +
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={() =>
+                                arrayHelpers.remove(answerOptionIndex)
+                              }
+                              className="secondary"
+                            >
+                              -
+                            </Button>
+                          </Col>
+                        </Row>
+                      </div>
+                    )
+                  )
+                ) : (
+                  <Button type="button" onClick={() => arrayHelpers.push("")}>
+                    Add an Answer Option
+                  </Button>
+                )}
+              </div>
+            )}
+          />
+        );
+      case 6:
+        return (
+          <div className="row">
+            <input
+              placeholder="Yes Value"
+              type="text"
+              className="form-control"
+              disabled
+              readOnly
+            />
+          </div>
+        );
+      case 7:
+        return (
+          <div className="row">
+            <input
+              placeholder="No Value"
+              type="text"
+              className="form-control"
+              disabled
+              readOnly
+            />
+          </div>
+        );
+      case 8:
+        return (
+          <div className="row">
+            <input
+              placeholder="Other Value"
+              type="text"
+              className="form-control"
+              disabled
+              readOnly
+            />
+          </div>
+        );
+      default:
+        return (
+          <div className="row">
+            <input
+              placeholder="Answer Option"
+              type="text"
+              className="form-control"
+              disabled
+              readOnly
+            />
+          </div>
+        );
+    }
+  }
+
+  const setOrder = (index, setFieldValue, currentOrder) => {
+    if (setFieldValue && index > -1) {
+      if (index + 1 !== currentOrder) {
+        setFieldValue(`surveyQuestions.${index}.sortOrder`, index + 1);
+      }
+    }
+    return index + 1;
+  };
+
+  return (
+    <Fragment>
+      <SurveysGradientHeader surveyData={surveyData}></SurveysGradientHeader>
+      <Formik
+        validationSchema={surveyQuestionsSchema}
+        enableReinitialize={true}
+        onSubmit={onSave}
+        initialValues={surveyData}
+      >
+        {(formik) => {
+          return (
+            <Container fluid className="mt-2">
+              <Row>
+                <Col>
+                  <Form>
+                    <Accordion flush defaultActiveKey={"0"} className="mb-2">
+                      {/* Survey Question*/}
+                      <Row>
+                        <Col xs={4}>
+                          <FieldArray name="surveyQuestions">
+                            {() => (
+                              <div>
+                                {formik.values.surveyQuestions.length > 0 &&
+                                  formik.values.surveyQuestions.map(
+                                    (surveyQuestions, questionIndex) => (
+                                      <div key={questionIndex}>
+                                        <Accordion.Item
+                                          eventKey={`${questionIndex}`}
+                                        >
+                                          <Accordion.Header>
+                                            {`${questionIndex + 1}`}:&nbsp;
+                                            <Field
+                                              name={`surveyQuestions.${questionIndex}.question`}
+                                              className={`${"form-control-plaintext"} `}
+                                              readOnly
+                                            />
+                                          </Accordion.Header>
+                                        </Accordion.Item>
+                                      </div>
+                                    )
+                                  )}
+                              </div>
+                            )}
+                          </FieldArray>
+                        </Col>
+                        <Col>
+                          <FieldArray name="surveyQuestions">
+                            {(arrayHelpers) => (
+                              <div>
+                                {formik.values.surveyQuestions.length > 0 &&
+                                  formik.values.surveyQuestions.map(
+                                    (surveyQuestions, questionIndex) => (
+                                      <div key={questionIndex}>
+                                        <Accordion.Item
+                                          eventKey={`${questionIndex}`}
+                                        >
+                                          <Accordion.Body className="border border-primary">
+                                            <Card>
+                                              <Card.Header>
+                                                <div className="pb-2">
+                                                  {/* Question */}
+                                                  <div className="pb-2">
+                                                    <FloatingLabel
+                                                      controlId="floatingInput"
+                                                      label="Question"
+                                                    >
+                                                      <Field
+                                                        name={`surveyQuestions.${questionIndex}.question`}
+                                                        placeholder="Question"
+                                                        type="text"
+                                                        className="form-control"
+                                                        required
+                                                      />
+                                                      We hope you enjoyed
+                                                      learning about the
+                                                      features and capabilities
+                                                      of MiVet. We believe that
+                                                      this mobile/web
+                                                      application has the
+                                                      potential to greatly
+                                                      improve the lives of pets
+                                                      and their owners by
+                                                      providing convenient and
+                                                      high-quality veterinary
+                                                      care. We want to thank you
+                                                      all for your support and
+                                                      for being a part of this
+                                                      journey with us. We are
+                                                      committed to continuously
+                                                      improving and updating the
+                                                      MiVet app/website, and we
+                                                      welcome any feedback or
+                                                      suggestions you may have.
+                                                      Again, thank you for
+                                                      joining us for this
+                                                      demonstration. We hope you
+                                                      will consider using MiVet
+                                                      for all of your pet care
+                                                      needs and sharing it with
+                                                      others in your community.
+                                                      Have a great evening!
+                                                      <ErrorMessage
+                                                        name={`surveyQuestions.${questionIndex}.question`}
+                                                        component="div"
+                                                        className="surveybuilder-validation-error-message"
+                                                      />
+                                                    </FloatingLabel>
+                                                  </div>
+                                                  <Row>
+                                                    {/* Help Text */}
+                                                    <Col xs={8}>
+                                                      <div className="pb-2">
+                                                        <FloatingLabel
+                                                          controlId="floatingInput"
+                                                          label="Help Text"
+                                                        >
+                                                          <Field
+                                                            name={`surveyQuestions.${questionIndex}.helpText`}
+                                                            placeholder="Help Text"
+                                                            type="text"
+                                                            className="form-control"
+                                                            required
+                                                          />
+                                                          <ErrorMessage
+                                                            name={`surveyQuestions.${questionIndex}.helpText`}
+                                                            component="div"
+                                                            className="surveybuilder-validation-error-message"
+                                                          />
+                                                        </FloatingLabel>
+                                                      </div>
+                                                    </Col>
+                                                    {/*QuestionType */}
+                                                    <Col xs={4}>
+                                                      <div className="">
+                                                        <FloatingLabel
+                                                          controlId="floatingInput"
+                                                          label="Question Type"
+                                                        >
+                                                          <Field
+                                                            component={Select}
+                                                            name={`surveyQuestions.${questionIndex}.questionTypeId`}
+                                                            options={
+                                                              mapQuestionTypes
+                                                            }
+                                                          >
+                                                            <option value="">
+                                                              Select Question
+                                                              Type
+                                                            </option>
+                                                          </Field>
+                                                          <ErrorMessage
+                                                            name={`surveyQuestions.${questionIndex}.questionTypeId`}
+                                                            component="div"
+                                                            className="surveybuilder-validation-error-message"
+                                                          />
+                                                        </FloatingLabel>
+                                                      </div>
+                                                    </Col>
+                                                    <Col xs={4}>
+                                                      {formik.values
+                                                        .questionTypeId ===
+                                                        1 && (
+                                                        <CheckCircleFill />
+                                                      )}
+                                                      {formik.values
+                                                        .questionTypeId ===
+                                                        2 && (
+                                                        <ExclamationTriangleFill />
+                                                      )}
+                                                      {formik.values
+                                                        .questionTypeId ===
+                                                        3 && <Bicycle />}
+                                                      {formik.values
+                                                        .questionTypeId ===
+                                                        4 && <Box2HeartFill />}
+                                                      {formik.values
+                                                        .questionTypeId ===
+                                                        5 && (
+                                                        <QuestionCircleFill />
+                                                      )}
+                                                    </Col>
+                                                  </Row>
+                                                </div>
+
+                                                {/* Answer Option */}
+                                                <div className="p-2 mb-2">
+                                                  {answerOptionsSwitch(
+                                                    formik.values,
+                                                    questionIndex
+                                                  )}
+                                                </div>
+                                              </Card.Header>
+
+                                              <Card.Footer>
+                                                <Row>
+                                                  {/* Remove Button */}
+                                                  <Col
+                                                    sm={{
+                                                      span: 1,
+                                                      offset: 0,
+                                                    }}
+                                                    className="p-2"
+                                                  >
+                                                    <div className="">
+                                                      <Button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          if (
+                                                            formik.values
+                                                              .surveyQuestions[
+                                                              questionIndex
+                                                            ].id === 0 ||
+                                                            formik.values
+                                                              .surveyQuestions[
+                                                              questionIndex
+                                                            ].id === null
+                                                          ) {
+                                                            arrayHelpers.remove(
+                                                              questionIndex
+                                                            );
+                                                          } else
+                                                            arrayHelpers.remove(
+                                                              questionIndex
+                                                            );
+                                                          deleteHandler(
+                                                            formik?.values
+                                                              ?.surveyQuestions[
+                                                              questionIndex
+                                                            ]?.id
+                                                          );
+                                                        }}
+                                                        className="btn"
+                                                        size="sm"
+                                                      >
+                                                        <FiTrash2
+                                                          color="white"
+                                                          size={"30px"}
+                                                        />
+                                                      </Button>
+                                                    </div>
+                                                  </Col>
+                                                  {/* Question Required */}
+                                                  <Col
+                                                    sm={{
+                                                      span: 1,
+                                                      offset: 1,
+                                                    }}
+                                                  >
+                                                    <div>
+                                                      <label htmlFor="isRequired">
+                                                        Required?
+                                                      </label>
+                                                      <Field
+                                                        type="checkbox"
+                                                        className="form-check"
+                                                        name={`surveyQuestions.${questionIndex}.isRequired`}
+                                                      ></Field>
+                                                    </div>
+                                                  </Col>
+                                                  {/* Is Multiple Allowed? */}
+                                                  <Col
+                                                    sm={{
+                                                      span: 4,
+                                                      offset: 2,
+                                                    }}
+                                                  >
+                                                    <div>
+                                                      <label htmlFor="isMultipleAllowed">
+                                                        Is Multiple Allowed?
+                                                      </label>
+                                                      <Field
+                                                        type="checkbox"
+                                                        className="form-check"
+                                                        name={`surveyQuestions.${questionIndex}.isMultipleAllowed`}
+                                                      ></Field>
+                                                    </div>
+                                                  </Col>
+                                                  {/* Sort Order */}
+                                                  <Col
+                                                    sm={{
+                                                      span: 2,
+                                                      offset: 0,
+                                                    }}
+                                                  >
+                                                    <div>
+                                                      <label htmlFor="sortOrder">
+                                                        Sort
+                                                      </label>
+                                                      <Field
+                                                        type="text"
+                                                        className="form-control text-sm-center"
+                                                        name={`surveyQuestions.${questionIndex}.sortOrder`}
+                                                        value={setOrder(
+                                                          questionIndex,
+                                                          formik.setFieldValue,
+                                                          formik.values
+                                                            .surveyQuestions[
+                                                            questionIndex
+                                                          ].sortOrder
+                                                        )}
+                                                        readOnly
+                                                      ></Field>
+                                                    </div>
+                                                  </Col>
+                                                </Row>
+                                              </Card.Footer>
+                                            </Card>
+                                          </Accordion.Body>
+                                        </Accordion.Item>
+                                      </div>
+                                    )
+                                  )}
+                                {/* Add Button */}
+                                <div className="mb-2">
+                                  <Col sm={{ span: 4, offset: 5 }}>
+                                    <Button
+                                      size="lg"
+                                      type="button"
+                                      className="secondary mt-2"
+                                      onClick={() => {
+                                        arrayHelpers.push({ ...newQuestion });
+                                      }}
+                                    >
+                                      Add Question
+                                    </Button>
+                                  </Col>
+                                </div>
+                              </div>
+                            )}
+                          </FieldArray>
+                        </Col>
+                      </Row>
+                    </Accordion>
+                    {/* Buttons */}
+                    <div className="d-flex justify-content-between">
+                      <Button type="reset" variant="secondary">
+                        Reset Form
+                      </Button>
+                      <Button type="submit" size="lg">
+                        Save
+                      </Button>
+                    </div>
+                  </Form>
+                </Col>
+              </Row>
+            </Container>
+          );
+        }}
+      </Formik>
+    </Fragment>
+  );
+};
+
+export default React.memo(AddSurvey);
