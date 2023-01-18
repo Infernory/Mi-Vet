@@ -1,0 +1,95 @@
+USE [MiVet]
+GO
+/****** Object:  StoredProcedure [dbo].[Surveys_SelectAll_SurveyDetails]    Script Date: 1/18/2023 12:39:30 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+-- =============================================
+-- Author: Ryan Pabalan
+-- Create date: December 06, 2022
+-- Description: Gets all survey name, author, gets json array of questions, each question has answeroptions.
+-- Code Reviewer: Dong Yoong Steve Kwak
+
+-- MODIFIED BY: author
+-- MODIFIED DATE: 12/20/22
+-- Code Reviewer: Victoria Sanchez
+-- Note: fixed users to reflect .Net mapper, added QuestionTypes into Question as lookup object.
+
+-- MODIFIED BY: author
+-- MODIFIED DATE: 1/2/22
+-- Code Reviewer: Joshua Yang
+-- Note: added coalesce to answer options values
+-- =============================================
+
+ALTER PROC [dbo].[Surveys_SelectAll_SurveyDetails]
+			 @PageIndex int
+			,@PageSize int
+
+/*	TEST CODE
+
+DECLARE		 @PageIndex int = 0
+			,@PageSize int = 100
+EXEC [dbo].[Surveys_SelectAll_SurveyDetails]
+			 @PageIndex
+			,@PageSize
+
+*/
+AS
+BEGIN
+DECLARE @offset int = @PageSize * @PageIndex;
+SELECT DISTINCT    su.[Id]
+				  ,su.[Name]
+				  ,su.[Description]
+				  ,ss.[Id] as StatusId
+				  ,ss.[Name] as StatusName
+				  ,st.[Id] as SurveyTypeId
+				  ,st.[Name] as SurveyTypeName
+				  ,us.[Email]
+				  ,us.[Id] as UserId
+				  ,us.[FirstName]
+				  ,us.[LastName]
+				  ,us.[AvatarUrl]
+				  ,ISNULL((
+						SELECT sq.[Id]
+							  ,[Question] as [Text]
+							  ,[HelpText]
+							  ,[IsRequired]
+							  ,[IsMultipleAllowed]
+							  ,JSON_QUERY((SELECT	qt.Id 
+													,qt.[Name]
+												  FROM [dbo].[QuestionTypes] as qt
+												  WHERE sq.QuestionTypeId = qt.Id
+												  FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)) as QuestionType
+													 
+							  ,[SurveyId]
+							  ,[SortOrder]
+							  ,ISNULL((SELECT sqao.Id
+											  ,sqao.QuestionId
+											  ,coalesce(sqao.[Text], '') as [Text]
+											  ,coalesce(sqao.[Value], '') as [Value]
+											  ,coalesce(sqao.[AdditionalInfo], '') as [AdditionalInfo]
+												FROM dbo.SurveyQuestionAnswerOptions as sqao
+												WHERE sq.Id = sqao.QuestionId
+												FOR JSON AUTO
+										),'[]') as QuestionAnswerOptions
+					 FROM [dbo].[SurveyQuestions] as sq
+					  WHERE sq.SurveyId = su.Id
+					 FOR JSON AUTO
+									),'[]') as SurveyQuestions
+				  ,su.DateCreated
+				  ,su.DateModified
+				  ,COUNT(1) OVER() as TotalCount
+  FROM [dbo].[Surveys] as su
+  INNER JOIN dbo.SurveyTypes as st
+  ON st.Id = su.SurveyTypeId
+  INNER JOIN [dbo].[SurveyStatus] as ss
+  ON ss.Id = su.StatusId
+  INNER JOIN [dbo].[Users] as us
+  ON us.Id = su.CreatedBy
+  ORDER BY su.DateModified DESC
+  OFFSET @Offset ROWS 
+  FETCH NEXT @pageSize ROWS ONLY
+END
